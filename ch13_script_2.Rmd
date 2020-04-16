@@ -5,13 +5,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 # Thanks to Seaam Noor for some excellent work on this script.
-
 # There are two packages which you need to install.
-
 # install.packages("tidymodels")
 # install.packages("rpart.plot")
 # install.packages("randomForest")
-
 knitr::opts_chunk$set(echo = TRUE)
 library(broom)
 library(infer)
@@ -20,14 +17,12 @@ library(gganimate)
 library(rpart.plot)
 library(tidymodels)
 library(tidyverse)
-
 # tidymodels really wants your dependent variable to be a factor. After all, you
 # have told tidymodels that it is not really a number --- it is a category with
 # two possible values. Keeping it as a 0/1 numeric is a hack. So, create a new
 # variable, `vote` which is either Democrat or Republican. In order to make the
 # coefficients have the same sign as they did on Tuesday, I change the default
 # ordering of the factor levels.
-
 nes <- read_rds("ch13_nes.rds") %>% 
   mutate(vote = factor(ifelse(dvote == 1, "Democrat", "Republican"), 
                           levels = c("Republican", "Democrat")))
@@ -50,6 +45,18 @@ Interpret the coefficient of `income`.
 
 Write a sentence to your smart-but-not-mathematical boss which explains the association of income with preference for the Democratic candidate. Include a notion of uncertainty.
 
+```{r scene_1}
+logistic_mod <- logistic_reg() %>%
+  set_engine("glm")
+logistic_fit <- fit(logistic_mod,
+                    vote ~ ideology + income + gender + race,
+                    data = nes)
+logistic_fit %>%
+  tidy(conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high)
+```
+
+Sentence: "If we divide the US population into 5 income categories and compare people in two adjoining buckets, say the 3s and the 4s, then the richer people are about 5% less likely to prefer the Democratic candidate, all else equal, but it might be as low as 4% or as high as 7%."
 
 
 # Scene 2
@@ -66,6 +73,17 @@ Write two sentences explaining to your smart-but-not-mathematical boss what the 
 
 Optional: Can you write a simple dplr pipe which does, more or less, what the CART is doing, at least for the first node, and then confirms the numbers in the plot?
 
+```{r scene_2}
+cart_mod <- decision_tree() %>%
+  set_engine("rpart", model = TRUE) %>%
+  set_mode("classification")
+cart_fit <- fit(cart_mod,
+                    vote ~ ideology + income + gender + race,
+                    data = nes)
+cart_fit$fit %>%
+  prp(extra = 6)
+```
+
 
 
 
@@ -81,6 +99,15 @@ How many trees did the forest use? Would we get better results if we used a diff
 
 What is OOB error?
 
+```{r}
+rf_mod <- rand_forest() %>%
+  set_engine("randomForest") %>%
+  set_mode("classification")
+rf_fit <- fit(rf_mod,
+              vote ~ ideology + income + gender + race,
+              data = nes)
+rf_fit
+```
 
 
 # Scene 4
@@ -101,6 +128,22 @@ Sensitivity = The proportion of actual 1s classified as 1
 Specificity = The proportion of actual 0s classified as 0
 
 
+```{r}
+nes_preds <- nes %>%
+  mutate(logistic = predict(logistic_fit, new_data = nes) %>% pull(.pred_class),
+         cart = predict(cart_fit, new_data = nes) %>% pull(.pred_class),
+         rf = predict(rf_fit, new_data = nes) %>% pull(.pred_class))
+nes_preds %>%
+  filter(! (cart == rf)) %>% 
+  select(gender, income, vote, logistic, cart, rf) %>%
+  sample_n(5)
+```
+
+```{r}
+tibble(logistic = mean(nes_preds$logistic == nes_preds$vote),
+       tree = mean(nes_preds$cart == nes_preds$vote),
+       forest = mean(nes_preds$rf == nes_preds$vote))
+```
 
 # Challenge Problem
 
@@ -109,5 +152,6 @@ Make a cool animation with the nes data, using [this package](https://github.com
 https://rpubs.com/rmckenzie11/599663   
 https://rpubs.com/evelyncai/d3rain_practice   
 https://rpubs.com/diego_martinez/d3rain   
+
 
 Surely, you can make something better than what they did! You also have a much richer data set to play with than they had. Maybe separate panels for different years. Maybe voters rain down from different income or ideology categories across the top? There are many possibilities! Add a link with to [today's Preceptor's Notes](https://piazza.com/class/k5y1jx0s5ibe1?cid=721).
